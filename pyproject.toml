@@ -1,0 +1,18 @@
+[project]
+name = "python-data-lake"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "apache-airflow>=3.3.0",
+    "beautifulsoup4>=4.15.0",
+    "duckdb>=1.5.4",
+    "httpx[http2]>=0.28.1",
+    "pandas>=3.0.3",
+    "polars>=1.42.1",
+    "python-dotenv>=1.2.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
