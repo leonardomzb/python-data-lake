@@ -12,3 +12,4 @@ lake/
 logs/
 
 .env
+.ruff_cache/

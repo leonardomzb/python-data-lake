@@ -11,8 +11,43 @@ dependencies = [
     "httpx[http2]>=0.28.1",
     "pandas>=3.0.3",
     "polars>=1.42.1",
+    "pyarrow>=25.0.0",
     "python-dotenv>=1.2.2",
+    "ruff>=0.15.22",
 ]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.ruff]
+# Versión de Python objetivo
+target-version = "py313"
+# Longitud máxima de línea estándar para código limpio
+line-length = 120
+
+[tool.ruff.lint]
+# Reglas clave para Ingeniería de Datos moderna
+select = [
+    "E",   # Errores de estilo (PEP8)
+    "W",   # Advertencias de estilo (PEP8)
+    "F",   # Errores de sintaxis y variables no usadas (Pyflakes)
+    "I",   # Ordenamiento automático de Imports (Reemplaza a isort)
+    "B",   # Previene bugs comunes (flake8-bugbear)
+    "C4",  # Optimiza comprensiones de listas/diccionarios (flake8-comprehensions)
+    "UP",  # Sugiere sintaxis de Python moderna (pyupgrade)
+    "ASYNC" # Detecta malas prácticas en código asíncrono (flake8-async)
+]
+
+# Reglas específicas que ignorar si es necesario
+ignore = []
+
+[tool.ruff.lint.isort]
+# Fuerza a que los imports sigan una estructura limpia y ordenada
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.ruff.format]
+# Configuración del formateador automático (Reemplaza a Black)
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
