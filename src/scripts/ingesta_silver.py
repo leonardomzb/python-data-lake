@@ -1,7 +1,11 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import polars as pl
+
+
+logger = logging.getLogger(__name__)
 
 
 def procesar_silver(bronce_file: str, fecha_logica: str, raiz_proyecto: Path) -> bool:
@@ -9,7 +13,7 @@ def procesar_silver(bronce_file: str, fecha_logica: str, raiz_proyecto: Path) ->
         current_time = datetime.strptime(fecha_logica, "%Y%m%d_%H%M%S")
 
         query = pl.scan_parquet(bronce_file)
-        print("Comenzando a procesar capa Silver...")
+        logger.info("Comenzando a procesar capa Silver...")
         transformacion_capa_silver = query.select(
             [
                 "ranking",
@@ -51,29 +55,34 @@ def procesar_silver(bronce_file: str, fecha_logica: str, raiz_proyecto: Path) ->
         )
         silver_folder.mkdir(parents=True, exist_ok=True)
 
-        print("Guardando datos estructurados en la capa Silver...")
+        logger.info("Guardando datos estructurados en la capa Silver...")
         silver_file_path: Path = silver_folder / f"data_{fecha_logica}.parquet"
 
         transformacion_capa_silver.sink_parquet(silver_file_path, compression="zstd")
 
-        print(f"Éxito. Archivo estructurado guardado en Silver: {silver_file_path}")
+        logger.info("Éxito. Archivo estructurado guardado en Silver: %s", silver_file_path)
         return silver_file_path.as_posix()
 
-    except Exception as e:
-        print(f"Error crítico inesperado en la capa Silver: {e}")
+    except Exception:
+        logger.exception("Error crítico inesperado en la capa Silver.")
         raise
 
 
 if __name__ == "__main__":
+    # Configuracion logging solo para pruebas
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
     # Valores default solo para pruebas de script individuales
     BRONCE_FILE: str = (
         r"C:\Users\leona\Documents\Trabajo\Trabajo"
         r"\Python\python-data-lake\lake\bronze\libros_mas_vendidos"
-        r"\year=2026\month=07\day=18\data_20260718_134816.parquet"
+        r"\year=2026\month=07\day=19\data_20260719_191544.parquet"
     )
 
     DEFAULT_ROOT: Path = Path(__file__).resolve().parents[2]
     FECHA_DEFAULT: str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print("Prueba local silver...")
+    logger.info("Prueba local Silver...")
     procesar_silver(bronce_file=BRONCE_FILE, fecha_logica=FECHA_DEFAULT, raiz_proyecto=DEFAULT_ROOT)

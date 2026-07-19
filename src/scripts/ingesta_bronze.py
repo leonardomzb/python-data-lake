@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,9 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 
+logger = logging.getLogger(__name__)
+
+
 def ingesta_bronze(url: str, headers: dict[str, str], fecha_logica: str, raiz_proyecto: Path) -> str | None:
     """
     Extracción desde Buscalibre y almacenamiento
@@ -18,7 +22,7 @@ def ingesta_bronze(url: str, headers: dict[str, str], fecha_logica: str, raiz_pr
 
     with httpx.Client(headers=headers, http2=True, timeout=12.0) as client:
         try:
-            print(f"Descargando datos desde: {url}")
+            logger.info("Iniciando descarga de datos desde la URL: %s", url)
             response = client.get(url)
 
             response.raise_for_status()
@@ -28,41 +32,47 @@ def ingesta_bronze(url: str, headers: dict[str, str], fecha_logica: str, raiz_pr
             bloques_libros = soup.find_all("div", class_="box-producto")
 
             if not bloques_libros:
-                raise ValueError("Error crítico: No se encontraron bloques de libros en el HTML.")
+                raise RuntimeError("No se encontraron bloques de libros en el HTML.")
 
             current_time = datetime.strptime(fecha_logica, "%Y%m%d_%H%M%S")
 
             records: list[dict[str, Any]] = []
 
             for posicion, bloque in enumerate(bloques_libros, start=1):
-                # Campos obligarotorios, de haber modificacion de diseño en BuscaLibre,
-                # se espera un error para actualizacion del script.
-                id_producto = bloque["data-id_producto"]
-                titulo = bloque.find("h3", class_="nombre").text.strip()
-                autor = bloque.find("div", class_="autor").text.strip()
-                precio_final = bloque["data-precio"]
-                metadatos = bloque.find("div", class_="metas").text.strip()
+                try:
+                    # Campos obligarotorios, de haber modificacion de diseño en BuscaLibre,
+                    # se espera un error para actualizacion del script.
+                    id_producto = bloque["data-id_producto"]
+                    titulo = bloque.find("h3", class_="nombre").text.strip()
+                    autor = bloque.find("div", class_="autor").text.strip()
+                    precio_final = bloque["data-precio"]
+                    metadatos = bloque.find("div", class_="metas").text.strip()
 
-                # Campos flexibles, se pueden almacenar como "None"
-                tag_desc = bloque.find("div", class_="descuento-v2")
-                porcentaje_descuento = tag_desc.text.strip() if tag_desc else None
+                    # Campos flexibles, se pueden almacenar como "None"
+                    tag_desc = bloque.find("div", class_="descuento-v2")
+                    porcentaje_descuento = tag_desc.text.strip() if tag_desc else None
 
-                tag_del = bloque.find("del")
-                precio_antes = tag_del.text.strip() if tag_del else None
+                    tag_del = bloque.find("del")
+                    precio_antes = tag_del.text.strip() if tag_del else None
 
-                records.append(
-                    {
-                        "ranking": posicion,
-                        "id_producto": id_producto,
-                        "titulo": titulo,
-                        "autor": autor,
-                        "metadatos": metadatos,
-                        "porcentaje_descuento": porcentaje_descuento,
-                        "precio_final": precio_final,
-                        "precio_antes": precio_antes,
-                        "fecha_ingesta": current_time.strftime("%Y-%m-%d"),
-                    }
-                )
+                    records.append(
+                        {
+                            "ranking": posicion,
+                            "id_producto": id_producto,
+                            "titulo": titulo,
+                            "autor": autor,
+                            "metadatos": metadatos,
+                            "porcentaje_descuento": porcentaje_descuento,
+                            "precio_final": precio_final,
+                            "precio_antes": precio_antes,
+                            "fecha_ingesta": current_time.strftime("%Y-%m-%d"),
+                        }
+                    )
+                except (KeyError, AttributeError):
+                    logger.exception("Campo obligatorio faltante. La estructura HTML cambió.")
+                    raise
+
+            logger.info("Extracción exitosa. Total de registros parseados: %d", len(records))
 
             # Creacion de directorios con estándar Hive.
             lake_dir = raiz_proyecto / "lake" / "bronze" / "libros_mas_vendidos"
@@ -76,34 +86,31 @@ def ingesta_bronze(url: str, headers: dict[str, str], fecha_logica: str, raiz_pr
             # records a tabla arrow
             tabla_arrow = pa.Table.from_pylist(records)
 
-            print("Guardando datos estructurados en la Capa Bronce...")
+            logger.info("Guardando datos estructurados en la Capa Bronce...")
             # Conexión explícita y aislada en memoria para DuckDB
             with duckdb.connect(database=":memory:") as con:
-                con.from_arrow(tabla_arrow).write_parquet(
-                    bronce_file_path.as_posix(),
-                    compression="ZSTD"
-                )
+                con.from_arrow(tabla_arrow).write_parquet(bronce_file_path.as_posix(), compression="ZSTD")
 
-            print(f"Éxito. Archivo estructurado guardado en Bronce: {bronce_file_path}")
+            logger.info("Éxito. Archivo estructurado guardado en Bronce: %s", bronce_file_path)
             return bronce_file_path.as_posix()
 
-        except httpx.HTTPStatusError as http_err:
-            print(f"Error de red o código de estado HTTP: {http_err}")
+        except httpx.HTTPStatusError:
+            logger.exception("Error de red o código de estado HTTP.")
             raise
-        except KeyError as key_err:
-            print(f"Error de estructura HTML: {key_err}")
-            raise
-        except AttributeError as attr_err:
-            print(f"Error de estructura HTML: {attr_err}")
-            raise
-        except Exception as e:
-            print(f"Error crítico inesperado en la capa Bronce: {e}")
+        except Exception:
+            logger.exception("Error crítico inesperado en la capa Bronce.")
             raise
 
 
 if __name__ == "__main__":
+    # Configuracion logging solo para pruebas
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
     # Carga de variables de entorno
     load_dotenv()
+
     URL_LOCAL = os.getenv("BUSCALIBRE_URL")
     USER_AGENT_LOCAL = os.getenv("USER_AGENT")
 
@@ -114,5 +121,5 @@ if __name__ == "__main__":
     DEFAULT_ROOT: Path = Path(__file__).resolve().parents[2]
     FECHA_DEFAULT: str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print("Prueba local bronze...")
+    print("Prueba local Bronze...")
     ingesta_bronze(url=URL_LOCAL, headers=HEADERS_LOCAL, fecha_logica=FECHA_DEFAULT, raiz_proyecto=DEFAULT_ROOT)
